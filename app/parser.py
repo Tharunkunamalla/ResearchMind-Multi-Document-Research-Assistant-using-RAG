@@ -346,6 +346,8 @@ class PDFParser:
             except Exception:
                 continue
             
+            page_marker_needed = True
+            
             for b in blocks:
                 if "lines" not in b:
                     continue
@@ -380,9 +382,16 @@ class PDFParser:
                     
                     cleaned_heading = re.sub(numbering_regex, '', block_text).strip()
                     current_section = self._normalize_section_name(cleaned_heading)
+                    # The heading shifts us to a new section, which will need a page marker for its first block
+                    page_marker_needed = True
                 else:
                     if self._is_header_or_footer(block_text, b["bbox"], page.rect.height):
                         continue
+                        
+                    if page_marker_needed:
+                        section_buffer.append(f"[PAGE_NUM:{page_idx + 1}]")
+                        page_marker_needed = False
+                        
                     section_buffer.append(block_text)
                     
         if section_buffer:
