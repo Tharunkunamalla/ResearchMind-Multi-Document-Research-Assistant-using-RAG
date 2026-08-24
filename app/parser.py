@@ -169,7 +169,8 @@ class PDFParser:
         # Find the Abstract start to act as a lower bound for authors
         abstract_y_start = first_page_height * 0.8
         for s in spans:
-            if "abstract" in s["text"].lower() and len(s["text"]) < 20:
+            txt_lower = s["text"].lower().strip()
+            if "abstract" in txt_lower and len(txt_lower) < 35:
                 abstract_y_start = s["bbox"][1]
                 break
                 
@@ -203,12 +204,31 @@ class PDFParser:
             r'abstract', r'introduction', r'http', r'www', r'\.org', r'\.edu', r'\.com'
         ]
         
+        def is_likely_name(name_str: str) -> bool:
+            words = name_str.strip().split()
+            if not words or len(words) > 4:
+                return False
+            lowercase_exceptions = {"and", "de", "van", "der", "von", "di", "y", "et", "al", "la", "le", "of"}
+            capitalized_words = 0
+            for w in words:
+                w_clean = re.sub(r'[^\w]', '', w)
+                if not w_clean:
+                    continue
+                if w_clean.lower() in lowercase_exceptions:
+                    continue
+                if w_clean[0].isupper():
+                    capitalized_words += 1
+                else:
+                    return False
+            return capitalized_words > 0
+
         for y in sorted_y_coords:
             line_spans = sorted(author_lines[y], key=lambda s: s["bbox"][0])
             line_text = " ".join([s["text"] for s in line_spans])
             
+            # Stop parsing authors as soon as we hit an affiliation or abstract section
             if any(re.search(pat, line_text, re.IGNORECASE) for pat in exclusion_patterns):
-                continue
+                break
                 
             if len(line_text) > 120:
                 continue
@@ -223,7 +243,8 @@ class PDFParser:
                 if name and len(name) > 2 and len(name) < 40:
                     name = re.sub(r'\s+', ' ', name)
                     if name.lower() not in ["abstract", "keywords", "key words", "preprint", "version", "proceedings"]:
-                        authors.append(name)
+                        if is_likely_name(name):
+                            authors.append(name)
                         
         seen = set()
         dedup_authors = []
@@ -233,6 +254,7 @@ class PDFParser:
                 dedup_authors.append(a)
                 
         return title, dedup_authors
+
 
     def _is_heading(self, block_text: str, first_span_size: float, body_font_size: float, is_bold: bool) -> bool:
         text = block_text.strip()
