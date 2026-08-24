@@ -5,4 +5,4 @@ uvicorn>=0.28.0
 python-multipart>=0.0.9
 pydantic>=2.6.0
 faiss-cpu>=1.8.0
-sentence-transformers>=2.3.0
+sentence-transformers==3.4.1
