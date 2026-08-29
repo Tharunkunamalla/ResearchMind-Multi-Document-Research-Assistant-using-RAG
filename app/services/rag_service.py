@@ -22,7 +22,7 @@ class RAGService:
     def __init__(
         self,
         vector_store: FAISSVectorStore,
-        model_name: str = "llama-3.3-70b-versatile",
+        model_name: str = "openai/gpt-oss-120b",
         temperature: float = 0.2,
         max_tokens: int = 1024
     ):
@@ -36,8 +36,10 @@ class RAGService:
         
         if self.api_key:
             try:
+                import httpx
                 from groq import Groq
-                self._groq_client = Groq(api_key=self.api_key)
+                # Use custom httpx.Client to maintain compatibility across httpx versions
+                self._groq_client = Groq(api_key=self.api_key, http_client=httpx.Client())
             except Exception as e:
                 print(f"[WARNING] Failed to initialize Groq client: {e}")
                 self._groq_client = None
