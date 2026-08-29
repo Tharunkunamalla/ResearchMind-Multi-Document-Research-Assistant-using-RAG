@@ -35,7 +35,7 @@ class FAISSVectorStore:
             
         self.current_id += len(chunks)
 
-    def search(self, query: str, top_k: int = 5) -> List[Tuple[dict, float]]:
+    def search(self, query: str, top_k: int = 5, paper_ids: List[str] = None) -> List[Tuple[dict, float]]:
         if self.index.ntotal == 0:
             return []
             
@@ -43,8 +43,9 @@ class FAISSVectorStore:
         query_vector = np.array([query_embedding]).astype('float32')
         faiss.normalize_L2(query_vector)
         
-        # Search index
-        scores, indices = self.index.search(query_vector, top_k)
+        # If filtering by paper_ids, retrieve more candidates to account for filtered out documents
+        search_k = min(self.index.ntotal, max(top_k * 4, 20)) if paper_ids else min(self.index.ntotal, top_k)
+        scores, indices = self.index.search(query_vector, search_k)
         
         results = []
         for score, idx in zip(scores[0], indices[0]):
@@ -52,9 +53,25 @@ class FAISSVectorStore:
                 continue
             idx_int = int(idx)
             if idx_int in self.metadata:
-                results.append((self.metadata[idx_int], float(score)))
+                chunk = self.metadata[idx_int]
+                if paper_ids and chunk.get("paper_id") not in paper_ids:
+                    continue
+                results.append((chunk, float(score)))
+                if len(results) >= top_k:
+                    break
                 
         return results
+
+    def get_chunks_by_paper_id(self, paper_id: str) -> List[dict]:
+        """Retrieves all indexed chunks for a specific paper, ordered by page and chunk id."""
+        matching = [
+            chunk for chunk in self.metadata.values()
+            if chunk.get("paper_id") == paper_id
+        ]
+        # Sort by page_number then chunk_id
+        matching.sort(key=lambda x: (x.get("page_number", 1), x.get("chunk_id", "")))
+        return matching
+
 
     def save(self, directory: str):
         os.makedirs(directory, exist_ok=True)
