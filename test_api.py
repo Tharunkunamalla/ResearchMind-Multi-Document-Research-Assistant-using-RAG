@@ -1,7 +1,14 @@
 import os
+import sys
+
+# Ensure UTF-8 stdout encoding on Windows
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 os.environ["USE_TF"] = "0"
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+
 
 from fastapi.testclient import TestClient
 from app.main import app
