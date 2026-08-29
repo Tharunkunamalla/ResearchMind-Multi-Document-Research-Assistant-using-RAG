@@ -1,24 +1,35 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from typing import List
+from typing import List, Optional
 import hashlib
 import os
 
-from app.schemas import ParsedDocumentResponse, QueryRequest, ChunkResponse, IndexDocumentResponse
+from app.schemas import (
+    ParsedDocumentResponse,
+    QueryRequest,
+    ChunkResponse,
+    IndexDocumentResponse,
+    RAGQueryRequest,
+    RAGQueryResponse,
+    PaperSummaryRequest,
+    PaperSummaryResponse
+)
 from app.parser import PDFParser
 from app.services.chunker import DocumentChunker
 from app.services.embedder import EmbeddingService
 from app.services.vector_store import FAISSVectorStore
+from app.services.rag_service import RAGService
 
 app = FastAPI(
     title="AI Research Assistant - Backend",
-    description="Backend service for parsing, chunking, and searching research papers.",
-    version="2.0.0"
+    description="Backend service for scientific PDF parsing, chunking, FAISS vector search, and grounded RAG synthesis with citations.",
+    version="3.0.0"
 )
 
 # Initialize Services
 chunker = DocumentChunker(chunk_size=500, chunk_overlap=50)
 embedder = EmbeddingService()
 vector_store = FAISSVectorStore(embedder=embedder)
+rag_service = RAGService(vector_store=vector_store)
 
 VECTOR_STORE_DIR = os.path.join("data", "vector_store")
 
@@ -78,10 +89,9 @@ async def index_pdf(file: UploadFile = File(...)):
         title = parsed_data.get("title", file.filename)
         
         # 3. Check if paper already indexed
-        is_indexed = any(c["paper_id"] == paper_id for c in vector_store.metadata.values())
+        is_indexed = any(c.get("paper_id") == paper_id for c in vector_store.metadata.values())
         if is_indexed:
-            # Count the existing chunks
-            existing_count = sum(1 for c in vector_store.metadata.values() if c["paper_id"] == paper_id)
+            existing_count = sum(1 for c in vector_store.metadata.values() if c.get("paper_id") == paper_id)
             return IndexDocumentResponse(
                 status="already_indexed",
                 paper_id=paper_id,
@@ -93,6 +103,8 @@ async def index_pdf(file: UploadFile = File(...)):
         all_chunks = []
         for sec_name, sec_text in parsed_data.get("sections", {}).items():
             chunks = chunker.split_section(sec_name, sec_text, paper_id)
+            for c in chunks:
+                c["title"] = title
             all_chunks.extend(chunks)
             
         # 5. Embed and add to Vector Store
@@ -126,6 +138,7 @@ async def search_documents(request: QueryRequest):
                 paper_id=metadata["paper_id"],
                 page_number=metadata["page_number"],
                 section=metadata["section"],
+                title=metadata.get("title"),
                 score=score
             ))
             
@@ -135,3 +148,39 @@ async def search_documents(request: QueryRequest):
             status_code=500,
             detail=f"An error occurred during search: {str(e)}"
         )
+
+@app.post("/api/research/query", response_model=RAGQueryResponse)
+async def query_research(request: RAGQueryRequest):
+    """
+    RAG endpoint that searches indexed research papers and synthesizes a grounded answer with citations.
+    """
+    try:
+        response = rag_service.answer_query(
+            query=request.query,
+            top_k=request.top_k,
+            paper_ids=request.paper_ids,
+            custom_system_prompt=request.system_prompt
+        )
+        return response
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"An error occurred during RAG synthesis: {str(e)}"
+        )
+
+@app.post("/api/research/summarize", response_model=PaperSummaryResponse)
+async def summarize_paper(request: PaperSummaryRequest):
+    """
+    Summarization endpoint that produces an executive summary and key findings for an indexed paper.
+    """
+    try:
+        response = rag_service.summarize_paper(paper_id=request.paper_id)
+        return response
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"An error occurred during summarization: {str(e)}"
+        )
+
