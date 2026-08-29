@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Environment and Data
+.env
+data/
+temp_vector_store/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
